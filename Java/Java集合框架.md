@@ -23,3 +23,8 @@ hash & (length - 1) == `101` == 5
   - 如果首节点为空，则利用 **CAS 设置该节点**；插入成功就推出循环，否则等待下一轮循环。
   - 如果首节点不为空，并且节点的hash值为-1，则表示有线程正在扩容，那么当前线程就加入扩容队伍帮助扩容。使用**CAS和synchronied进行扩容**。
   - 如果不为空，也没有扩容。那么使用**synchronied插入元素，synchronied锁的是头节点**，防止多线程并发修改节点元素。
+
+  ### ConcurrentHashMap的size方法是如何实现的？为什么会不准确？
+  在java7中，ConcurrentHashMap实现size的方式是首先以无锁的方式遍历每一个segment，累加每一个segment的count，如果过程中的modCount没有发生变化则表示没有并发操作。如果modCount发生变化则会重试，最多重试2次。如果两次都失败则会对所有segment加锁进行累加。并发修改时，`size()` 返回的是一个近似值，而非实时精确值。这种设计牺牲了绝对准确性，但大幅提升了性能。
+
+  在java8中，使用CAS和CounterCell数组来优化 `size()` 的计算。在 `size()` 方法实现过程中，使用baseCount变量记录未发生竞争时的元素数量。如果发生多个线程记录baseCount，则会通过CAS更新CounterCell数组中的某个元素，最终通过baseCount+sum(CounterCell[])得到总大小。如果直接使用一个全局的 volatile int size，每次修改都需要通过 CAS 更新该变量，会导致大量线程竞争，降低吞吐量。而 CounterCell 数组通过分散竞争（每个线程更新不同的槽位）减少了冲突。由于CounterCell数组可能在累加过程中被修改，最终结果是一个近似值（但在并发场景下足够实用）。
